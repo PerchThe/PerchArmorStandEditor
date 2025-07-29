@@ -168,14 +168,6 @@ public class PlayerEditorManager implements Listener {
                 } else if (!name.equals("")) { // nametag is not blank
                     event.setCancelled(true);
 
-                    if ((player.getGameMode() != GameMode.CREATIVE)) {
-                        if (nameTag.getAmount() > 1) {
-                            nameTag.setAmount(nameTag.getAmount() - 1);
-                        } else {
-                            nameTag = new ItemStack(Material.AIR);
-                        }
-                        player.getInventory().setItemInMainHand(nameTag);
-                    }
 
                     //minecraft will set the name after this event even if the event is cancelled.
                     //change it 1 tick later to apply formatting without it being overwritten

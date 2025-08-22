@@ -1,3 +1,22 @@
+/*
+ * ArmorStandEditor: Bukkit plugin to allow editing armor stand attributes
+ * Copyright (C) 2016-2023  RypoFalem
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License
+ * as published by the Free Software Foundation; either version 2
+ * of the License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ */
+
 package io.github.rypofalem.armorstandeditor.menu;
 
 import io.github.rypofalem.armorstandeditor.ArmorStandEditorPlugin;
@@ -18,14 +37,16 @@ import org.bukkit.persistence.PersistentDataType;
 
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class SizeMenu extends ASEHolder {
 
     public ArmorStandEditorPlugin plugin = ArmorStandEditorPlugin.instance();
-    Inventory menuInv;
+    private Inventory menuInv;
     private Debug debug;
-    private PlayerEditor pe;
-    private ArmorStand as;
+    private final PlayerEditor pe;
+    private final ArmorStand as;
     static String name = "Size Menu";
 
     public SizeMenu(PlayerEditor pe, ArmorStand as) {
@@ -33,60 +54,124 @@ public class SizeMenu extends ASEHolder {
         this.as = as;
         this.debug = new Debug(pe.plugin);
         name = pe.plugin.getLang().getMessage("sizeMenu", "menutitle");
-        menuInv = Bukkit.createInventory(pe.getManager().getSizeMenuHolder(), 27, name);
+        // 6 rows (54): top filler, two centered rows (1..10), blank row, options row, bottom filler
+        menuInv = Bukkit.createInventory(pe.getManager().getSizeMenuHolder(), 54, name);
     }
 
-    //Replace Values.
-    final String VALUETOREPLACE = "§" + plugin.getLang().getFormat("info"); //VALUE WE DONT WANT: §6
-    final String VALUEWEWANT = "§" +plugin.getLang().getFormat("iconname").substring(0, 1) +
-            "§" + plugin.getLang().getFormat("iconname").substring(1); //VALUE WE WANT IS: §2§nScale = 9
+    // ----- Normalized titles (gold, not underlined) pulled via same path keys as createIcon -----
+    private String normalizedTitleForPath(String path) {
+        String raw = plugin.getLang().getMessage(path, "iconname", null);
+        if (raw == null || raw.isBlank()) raw = defaultTitleForPath(path);
+        return toGold(noUnderline(noColors(raw)));
+    }
 
-    //Preset Strings.
-    final String SCALE1 = plugin.getLang().getMessage("scale1").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALE2 = plugin.getLang().getMessage("scale2").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALE3 = plugin.getLang().getMessage("scale3").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALE4 = plugin.getLang().getMessage("scale4").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALE5 = plugin.getLang().getMessage("scale5").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALE6 = plugin.getLang().getMessage("scale6").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALE7 = plugin.getLang().getMessage("scale7").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALE8 = plugin.getLang().getMessage("scale8").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALE9 = plugin.getLang().getMessage("scale9").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALE10 = plugin.getLang().getMessage("scale10").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALEPLUS12 = plugin.getLang().getMessage("scaleadd12").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALEMINUS12 = plugin.getLang().getMessage("scaleremove12").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALEPLUS110 = plugin.getLang().getMessage("scaleadd110").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String SCALEMINUS110 = plugin.getLang().getMessage("scaleremove110").replace(VALUETOREPLACE, VALUEWEWANT);
+    private final String SCALE1        = normalizedTitleForPath("scale1");
+    private final String SCALE2        = normalizedTitleForPath("scale2");
+    private final String SCALE3        = normalizedTitleForPath("scale3");
+    private final String SCALE4        = normalizedTitleForPath("scale4");
+    private final String SCALE5        = normalizedTitleForPath("scale5");
+    private final String SCALE6        = normalizedTitleForPath("scale6");
+    private final String SCALE7        = normalizedTitleForPath("scale7");
+    private final String SCALE8        = normalizedTitleForPath("scale8");
+    private final String SCALE9        = normalizedTitleForPath("scale9");
+    private final String SCALE10       = normalizedTitleForPath("scale10");
+    private final String SCALEPLUS12   = normalizedTitleForPath("scaleadd12");    // +0.5
+    private final String SCALEMINUS12  = normalizedTitleForPath("scaleremove12"); // -0.5
+    private final String SCALEPLUS110  = normalizedTitleForPath("scaleadd110");   // +0.1
+    private final String SCALEMINUS110 = normalizedTitleForPath("scaleremove110");// -0.1
 
-    //Menu Stuff
-    final String BACKTOMENU = plugin.getLang().getMessage("backtomenu").replace(VALUETOREPLACE, VALUEWEWANT);
-    final String RESET = plugin.getLang().getMessage("reset").replace(VALUETOREPLACE, VALUEWEWANT);
-
+    // Optional (not placed in layout, but handler supports them if added later)
+    private final String BACKTOMENU    = normalizedTitleForPath("backtomenu");
+    private final String RESET         = normalizedTitleForPath("reset");
 
     private void fillInventory() {
         menuInv.clear();
-        ItemStack blankSlot = createIcon(new ItemStack(Material.BLACK_STAINED_GLASS_PANE, 1), "blankslot");
-        ItemStack base10 = createIcon(new ItemStack(Material.RED_CONCRETE, 1), "scale1");
-        ItemStack base20 = createIcon(new ItemStack(Material.RED_CONCRETE, 2), "scale2");
-        ItemStack base30 = createIcon(new ItemStack(Material.RED_CONCRETE, 3), "scale3");
-        ItemStack base40 = createIcon(new ItemStack(Material.RED_CONCRETE, 4), "scale4");
-        ItemStack base50 = createIcon(new ItemStack(Material.RED_CONCRETE, 5), "scale5");
-        ItemStack base60 = createIcon(new ItemStack(Material.RED_CONCRETE, 6), "scale6");
-        ItemStack base70 = createIcon(new ItemStack(Material.RED_CONCRETE, 7), "scale7");
-        ItemStack base80 = createIcon(new ItemStack(Material.RED_CONCRETE, 8), "scale8");
-        ItemStack base90 = createIcon(new ItemStack(Material.RED_CONCRETE, 9), "scale9");
-        ItemStack base100 = createIcon(new ItemStack(Material.RED_CONCRETE, 10), "scale10");
-        ItemStack add12toBase = createIcon(new ItemStack(Material.ORANGE_CONCRETE, 1), "scaleadd12");
-        ItemStack remove12fromBase = createIcon(new ItemStack(Material.GREEN_CONCRETE, 1), "scaleremove12");
-        ItemStack add110fromBase = createIcon(new ItemStack(Material.ORANGE_CONCRETE, 2), "scaleadd110");
-        ItemStack remove110fromBase = createIcon(new ItemStack(Material.GREEN_CONCRETE, 2), "scaleremove110");
-        ItemStack backToMenu = createIcon(new ItemStack(Material.RED_WOOL, 1), "backtomenu");
-        ItemStack resetIcon = createIcon(new ItemStack(Material.NETHER_STAR, 1), "reset");
 
-        ItemStack[] items = {
-            backToMenu, blankSlot, base10, base20, base30, base40, base50, base60, blankSlot,
-            resetIcon, blankSlot, base70, base80, base90, base100, blankSlot, add12toBase, remove12fromBase,
-            blankSlot, blankSlot, blankSlot, blankSlot, blankSlot, blankSlot, blankSlot, add110fromBase, remove110fromBase
-        };
+        // Filler: gray stained glass pane (no name/lore)
+        ItemStack filler = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
+        ItemMeta fm = filler.getItemMeta();
+        if (fm != null) {
+            fm.setDisplayName(" ");
+            fm.setLore(new ArrayList<>());
+            fm.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
+            filler.setItemMeta(fm);
+        }
+
+        // Build exact-scale items (1..10)
+        ItemStack base10   = createIcon(new ItemStack(Material.RED_STAINED_GLASS, 1),  "scale1");
+        ItemStack base20   = createIcon(new ItemStack(Material.RED_STAINED_GLASS, 2),  "scale2");
+        ItemStack base30   = createIcon(new ItemStack(Material.RED_STAINED_GLASS, 3),  "scale3");
+        ItemStack base40   = createIcon(new ItemStack(Material.RED_STAINED_GLASS, 4),  "scale4");
+        ItemStack base50   = createIcon(new ItemStack(Material.RED_STAINED_GLASS, 5),  "scale5");
+        ItemStack base60   = createIcon(new ItemStack(Material.RED_STAINED_GLASS, 6),  "scale6");
+        ItemStack base70   = createIcon(new ItemStack(Material.RED_STAINED_GLASS, 7),  "scale7");
+        ItemStack base80   = createIcon(new ItemStack(Material.RED_STAINED_GLASS, 8),  "scale8");
+        ItemStack base90   = createIcon(new ItemStack(Material.RED_STAINED_GLASS, 9),  "scale9");
+        ItemStack base100  = createIcon(new ItemStack(Material.RED_STAINED_GLASS, 10), "scale10");
+
+        // Deltas
+        ItemStack add12toBase       = createIcon(new ItemStack(Material.ORANGE_STAINED_GLASS, 1), "scaleadd12");
+        ItemStack remove12fromBase  = createIcon(new ItemStack(Material.GREEN_STAINED_GLASS, 1),  "scaleremove12");
+        ItemStack add110fromBase    = createIcon(new ItemStack(Material.ORANGE_STAINED_GLASS, 2), "scaleadd110");
+        ItemStack remove110fromBase = createIcon(new ItemStack(Material.GREEN_STAINED_GLASS, 2),  "scaleremove110");
+
+        // Miniature (chibi) toggle — EGG, dynamic ON/OFF title & white lore
+        String miniatureTitle = miniatureTitle(as.isSmall());
+        ItemStack miniature = createIconCustom(
+                new ItemStack(Material.EGG),
+                "scalesmall",
+                miniatureTitle,
+                toWhite("Toggle small size")
+        );
+
+        // Back button at top-left
+        ItemStack back = new ItemStack(Material.RED_STAINED_GLASS_PANE);
+        ItemMeta bm = back.getItemMeta();
+        if (bm != null) {
+            String backTitle = plugin.getLang().getMessage("backtomenu", "iconname");
+            if (backTitle == null || backTitle.isBlank()) backTitle = "Back";
+            bm.setDisplayName(toGold(noUnderline(noColors(backTitle))));
+            ArrayList<String> lore = new ArrayList<>();
+            String backDesc = plugin.getLang().getMessage("backtomenu.description", "icondescription");
+            if (backDesc == null) backDesc = "";
+            lore.add(toWhite(noUnderline(stripLeadingColorCodes(backDesc))));
+            bm.setLore(lore);
+            bm.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
+            bm.getPersistentDataContainer().set(ArmorStandEditorPlugin.instance().getIconKey(),
+                    PersistentDataType.STRING, "ase back");
+            back.setItemMeta(bm);
+        }
+
+        // Start with filler everywhere
+        ItemStack[] items = new ItemStack[54];
+        for (int i = 0; i < items.length; i++) items[i] = filler;
+
+        // Row 1 (0..8): place Back at 0
+        items[0] = back;
+
+        // Rows 2–3 centered (exclude first 2 and last 2 columns -> use 11..15 and 20..24)
+        items[11] = base10;
+        items[12] = base20;
+        items[13] = base30;
+        items[14] = base40;
+        items[15] = base50;
+
+        items[20] = base60;
+        items[21] = base70;
+        items[22] = base80;
+        items[23] = base90;
+        items[24] = base100;
+
+        // Row 4 (27..35): filler
+
+        // Row 5 (36..44): deltas + miniature toggle in the center (40)
+        items[36] = remove12fromBase;  // -0.5
+        items[37] = add12toBase;       // +0.5
+        items[40] = miniature;         // Miniature: ON/OFF (EGG)
+        items[43] = remove110fromBase; // -0.1
+        items[44] = add110fromBase;    // +0.1
+
+        // Row 6 (45..53): filler
 
         menuInv.setContents(items);
     }
@@ -98,64 +183,135 @@ public class SizeMenu extends ASEHolder {
     private ItemStack createIcon(ItemStack icon, String path, String option) {
         ItemMeta meta = icon.getItemMeta();
         assert meta != null;
-        meta.getPersistentDataContainer().set(ArmorStandEditorPlugin.instance().getIconKey(), PersistentDataType.STRING, "ase " + option);
-        meta.setDisplayName(getIconName(path, option));
+
+        // Command tag (use 'path' when option is null)
+        meta.getPersistentDataContainer().set(
+                ArmorStandEditorPlugin.instance().getIconKey(),
+                PersistentDataType.STRING,
+                "ase " + (option != null ? option : path)
+        );
+
+        // Name: gold, no underline; Lore: white (with fallbacks)
+        String nameCol = normalizedTitleForPath(path);
+
+        String rawDesc = plugin.getLang().getMessage(path + ".description", "icondescription", option);
+        if (rawDesc == null) rawDesc = "";
+        String descCol = toWhite(noUnderline(stripLeadingColorCodes(rawDesc)));
+
+        meta.setDisplayName(nameCol);
         ArrayList<String> loreList = new ArrayList<>();
-        loreList.add(getIconDescription(path, option));
+        if (!descCol.isBlank()) loreList.add(descCol);
         meta.setLore(loreList);
+
         meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
         icon.setItemMeta(meta);
         return icon;
     }
 
-    private String getIconName(String path, String option) {
-        return pe.plugin.getLang().getMessage(path, "iconname", option);
+    // Explicit override for hardcoded title/lore (Miniature mode)
+    private ItemStack createIconCustom(ItemStack icon, String command, String title, String lore) {
+        ItemMeta meta = icon.getItemMeta();
+        assert meta != null;
+
+        meta.getPersistentDataContainer().set(
+                ArmorStandEditorPlugin.instance().getIconKey(),
+                PersistentDataType.STRING,
+                "ase " + command
+        );
+
+        meta.setDisplayName(title);
+        ArrayList<String> loreList = new ArrayList<>();
+        if (lore != null && !lore.isBlank()) loreList.add(lore);
+        meta.setLore(loreList);
+
+        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
+        icon.setItemMeta(meta);
+        return icon;
     }
 
-
-    private String getIconDescription(String path, String option) {
-        return pe.plugin.getLang().getMessage(path + ".description", "icondescription", option);
+    private String miniatureTitle(boolean isSmall) {
+        return toGold("Miniature mode: " + (isSmall ? "ON" : "OFF"));
     }
 
+    private String defaultTitleForPath(String path) {
+        // scaleN -> "Scale N"
+        Matcher m = Pattern.compile("^scale(\\d{1,2})$").matcher(path);
+        if (m.find()) {
+            return "Scale " + m.group(1);
+        }
+        return switch (path) {
+            case "scaleadd12"     -> "+0.5";
+            case "scaleremove12"  -> "-0.5";
+            case "scaleadd110"    -> "+0.1";
+            case "scaleremove110" -> "-0.1";
+            case "scalesmall"     -> "Miniature mode";
+            case "backtomenu"     -> "Back";
+            case "reset"          -> "Reset";
+            default               -> path;
+        };
+    }
 
+    // ----- Formatting helpers (defined once) -----
+    private String color(String s) { return s == null ? "" : s.replace('&', '§'); }
+    private String toGold(String s) { return color("&6" + s); }
+    private String toWhite(String s) { return color("&f" + s); }
+    private String noUnderline(String s) { return s == null ? "" : s.replaceAll("(?i)[§&]n", ""); }
+    private String noColors(String s) { return s == null ? "" : s.replaceAll("(?i)[§&][0-9A-FK-ORX]", ""); }
+    private String stripLeadingColorCodes(String s) { return s == null ? "" : s.replaceFirst("(?i)^[§&][0-9A-FK-ORX]", ""); }
+
+    // ----- Click handling -----
     public void handleAttributeScaling(String itemName, Player player) {
         if (itemName == null || player == null) return;
 
-        // Separate maps for positive and negative scaling options
         Map<String, Double> positiveScaleMap = Map.ofEntries(
-            Map.entry(SCALE1, 1.0),
-            Map.entry(SCALE2, 2.0),
-            Map.entry(SCALE3, 3.0),
-            Map.entry(SCALE4, 4.0),
-            Map.entry(SCALE5, 5.0),
-            Map.entry(SCALE6, 6.0),
-            Map.entry(SCALE7, 7.0),
-            Map.entry(SCALE8, 8.0),
-            Map.entry(SCALE9, 9.0),
-            Map.entry(SCALE10, 10.0),
-            Map.entry(SCALEPLUS12, 0.5),
-            Map.entry(SCALEPLUS110, 0.1)
+                Map.entry(SCALE1, 1.0),
+                Map.entry(SCALE2, 2.0),
+                Map.entry(SCALE3, 3.0),
+                Map.entry(SCALE4, 4.0),
+                Map.entry(SCALE5, 5.0),
+                Map.entry(SCALE6, 6.0),
+                Map.entry(SCALE7, 7.0),
+                Map.entry(SCALE8, 8.0),
+                Map.entry(SCALE9, 9.0),
+                Map.entry(SCALE10, 10.0),
+                Map.entry(SCALEPLUS12, 0.5),
+                Map.entry(SCALEPLUS110, 0.1)
         );
 
         Map<String, Double> negativeScaleMap = Map.ofEntries(
-            Map.entry(SCALEMINUS12, 0.5), // Changed value to negative for decrement
-            Map.entry(SCALEMINUS110, 0.1) // Changed value to negative for decrement
+                Map.entry(SCALEMINUS12, 0.5),
+                Map.entry(SCALEMINUS110, 0.1)
         );
 
         if (positiveScaleMap.containsKey(itemName)) {
             handleScaleChange(player, itemName, positiveScaleMap.get(itemName));
-        } else if (negativeScaleMap.containsKey(itemName)) {
+            return;
+        }
+        if (negativeScaleMap.containsKey(itemName)) {
             handleScaleChange(player, itemName, negativeScaleMap.get(itemName));
-        } else if (itemName.equals(BACKTOMENU)) {
+            return;
+        }
+
+        // Miniature toggle — accept both ON and OFF versions
+        String miniOn  = miniatureTitle(true);
+        String miniOff = miniatureTitle(false);
+        if (itemName.equals(miniOn) || itemName.equals(miniOff)) {
+            if (!as.isValid() || !player.hasPermission("asedit.togglesize")) return;
+            as.setSmall(!as.isSmall());  // toggle
+            playChimeSound(player);
+            player.closeInventory();
+            return;
+        }
+
+        if (itemName.equals(BACKTOMENU)) {
             handleBackToMenu(player);
         } else if (itemName.equals(RESET)) {
             handleReset(player);
         }
     }
 
-
-    private void handleScaleChange(Player player, String itemName, double scale) {
-        setArmorStandScale(player, itemName, scale);
+    private void handleScaleChange(Player player, String itemName, double scaleValue) {
+        setArmorStandScale(player, itemName, scaleValue);
         playChimeSound(player);
         player.closeInventory();
     }
@@ -178,19 +334,21 @@ public class SizeMenu extends ASEHolder {
 
     private void setArmorStandScale(Player player, String itemName, double scaleValue) {
         debug.log("Setting the Scale of the ArmorStand");
-        double currentScaleValue = 0;
+        if (!as.isValid()) return;
+        if (!player.hasPermission("asedit.togglesize")) return;
+
+        double currentScaleValue;
         double newScaleValue;
 
-        if(!as.isValid()) return;
-
-        if(!player.hasPermission("asedit.togglesize")) return;
-
-        // Basically go from 0 directly to ItemSize
+        // Direct set to exact scale 1..10
         if (itemName.equals(SCALE1) || itemName.equals(SCALE2) || itemName.equals(SCALE3)
                 || itemName.equals(SCALE4) || itemName.equals(SCALE5) || itemName.equals(SCALE6)
                 || itemName.equals(SCALE7) || itemName.equals(SCALE8) || itemName.equals(SCALE9)
                 || itemName.equals(SCALE10)) {
+
+            currentScaleValue = 0.0;
             newScaleValue = currentScaleValue + scaleValue;
+
             debug.log("Result of the scale Calculation: " + newScaleValue);
 
             if (newScaleValue > plugin.getMaxScaleValue()) {
@@ -201,27 +359,34 @@ public class SizeMenu extends ASEHolder {
                 as.getAttribute(Attribute.SCALE).setBaseValue(newScaleValue);
             }
 
-            // Add either 0.1 or 0.5 to the current
+            // Increment +0.5 / +0.1
         } else if (itemName.equals(SCALEPLUS12) || itemName.equals(SCALEPLUS110)) {
-            currentScaleValue = as.getAttribute(Attribute.SCALE).getBaseValue(); //Get the current Value
-            newScaleValue = currentScaleValue + scaleValue; // Add for increments
+            currentScaleValue = as.getAttribute(Attribute.SCALE).getBaseValue();
+            newScaleValue = currentScaleValue + scaleValue;
+
             debug.log("Result of the scale Calculation: " + newScaleValue);
+
             if (newScaleValue > plugin.getMaxScaleValue()) {
                 pe.getPlayer().sendMessage(plugin.getLang().getMessage("scalemaxwarn", "warn"));
                 return;
             }
             as.getAttribute(Attribute.SCALE).setBaseValue(newScaleValue);
-            //Subtract either 0.1 or 0.5 from the current
+
+            // Decrement -0.5 / -0.1
         } else if (itemName.equals(SCALEMINUS12) || itemName.equals(SCALEMINUS110)) {
             currentScaleValue = as.getAttribute(Attribute.SCALE).getBaseValue();
-            newScaleValue = currentScaleValue - scaleValue; // Subtract for decrements
+            newScaleValue = currentScaleValue - scaleValue;
+
             debug.log("Result of the scale Calculation: " + newScaleValue);
+
             if (newScaleValue < plugin.getMinScaleValue()) {
                 pe.getPlayer().sendMessage(plugin.getLang().getMessage("scaleminwarn", "warn"));
                 return;
             }
             as.getAttribute(Attribute.SCALE).setBaseValue(newScaleValue);
-        } else if (itemName.equals(RESET)) { // Set it back to 1
+
+            // Reset to 1 (if you later place a reset button wired to RESET)
+        } else if (itemName.equals(RESET)) {
             newScaleValue = 1.0;
             as.getAttribute(Attribute.SCALE).setBaseValue(newScaleValue);
         }

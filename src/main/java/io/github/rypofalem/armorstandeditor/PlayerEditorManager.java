@@ -50,15 +50,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
 
-//Manages PlayerEditors and Player Events related to editing armorstands
+// Manages PlayerEditors and Player Events related to editing armorstands
 public class PlayerEditorManager implements Listener {
     private Debug debug;
     private ArmorStandEditorPlugin plugin;
     private HashMap<UUID, PlayerEditor> players;
-    private ASEHolder menuHolder = new ASEHolder(); //Inventory holder that owns the main ase menu inventories for the plugin
-    private ASEHolder equipmentHolder = new ASEHolder(); //Inventory holder that owns the equipment menu
-    private ASEHolder presetHolder = new ASEHolder(); //Inventory Holder that owns the PresetArmorStand Post Menu
-    private ASEHolder sizeMenuHolder = new ASEHolder(); //Inventory Holder that owns the PresetArmorStand Post Menu
+    private ASEHolder menuHolder = new ASEHolder(); // Inventory holder that owns the main ase menu inventories for the plugin
+    private ASEHolder equipmentHolder = new ASEHolder(); // Inventory holder that owns the equipment menu
+    private ASEHolder presetHolder = new ASEHolder(); // Inventory Holder that owns the PresetArmorStand Post Menu
+    private ASEHolder sizeMenuHolder = new ASEHolder(); // Inventory Holder that owns the PresetArmorStand Post Menu
     double coarseAdj;
     double fineAdj;
     double coarseMov;
@@ -70,18 +70,22 @@ public class PlayerEditorManager implements Listener {
     private Integer noSize = 0;
     Team team;
 
+    // Debounce to avoid double-processing between damage and swing paths
+    private final HashMap<UUID, Long> lastEditTick = new HashMap<>();
+
     // Instantiate protections used to determine whether a player may edit an armor stand or item frame
-    //NOTE: GriefPreventionProtection is Depreciated as of v1.19.3-40
+    // NOTE: GriefPreventionProtection is Deprecated as of v1.19.3-40
     private final List<Protection> protections = ImmutableList.of(
-        new GriefDefenderProtection(),
-        new GriefPreventionProtection(),
-        new LandsProtection(),
-        new PlotSquaredProtection(),
-        new SkyblockProtection(),
-        new TownyProtection(),
-        new WorldGuardProtection(),
-        new itemAdderProtection(),
-        new BentoBoxProtection());
+            new GriefDefenderProtection(),
+            new GriefPreventionProtection(),
+            new LandsProtection(),
+            new PlotSquaredProtection(),
+            new SkyblockProtection(),
+            new TownyProtection(),
+            new WorldGuardProtection(),
+            new itemAdderProtection(),
+            new BentoBoxProtection()
+    );
 
     PlayerEditorManager(ArmorStandEditorPlugin plugin) {
         this.plugin = plugin;
@@ -95,26 +99,42 @@ public class PlayerEditorManager implements Listener {
         Scheduler.runTaskTimer(plugin, counter, 1, 1);
     }
 
-    @EventHandler(priority = EventPriority.LOWEST)
+    private boolean debounce(UUID id) {
+        long now = getTime();
+        Long last = lastEditTick.get(id);
+        if (last != null && now - last <= 2) return true; // 2 ticks ~ 100ms
+        lastEditTick.put(id, now);
+        return false;
+    }
+
+    // Primary left-click path via damage event (works when damage events still fire)
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     void onArmorStandDamage(EntityDamageByEntityEvent event) {
         if (!(event.getDamager() instanceof Player)) return;
         Player player = (Player) event.getDamager();
         if (!plugin.isEditTool(player.getInventory().getItemInMainHand())) return;
+
         if (!((event.getEntity() instanceof ArmorStand) || event.getEntity() instanceof ItemFrame)) {
+            // Left-clicked something else with the tool: open menu
             event.setCancelled(true);
             debug.log("Open Menu Called for Player: " + player.getDisplayName());
             getPlayerEditor(player.getUniqueId()).openMenu();
             return;
         }
+
+        if (debounce(player.getUniqueId())) {
+            event.setCancelled(true);
+            return;
+        }
+
         if (event.getEntity() instanceof ArmorStand) {
-            debug.log("Player '" + player.getDisplayName() + "' has left clicked the ArmorStand");
+            debug.log("Player '" + player.getDisplayName() + "' has LEFT clicked the ArmorStand");
             ArmorStand as = (ArmorStand) event.getEntity();
             getPlayerEditor(player.getUniqueId()).cancelOpenMenu();
-            event.setCancelled(true);
-            if (canEdit(player, as))
-                applyLeftTool(player, as);
+            event.setCancelled(true); // Never damage stands while editing
+            if (canEdit(player, as)) applyLeftTool(player, as);
         } else if (event.getEntity() instanceof ItemFrame) {
-            debug.log(" Player '" + player.getDisplayName() + "' has right clicked on an ItemFrame");
+            debug.log("Player '" + player.getDisplayName() + "' has LEFT clicked the ItemFrame");
             ItemFrame itemf = (ItemFrame) event.getEntity();
             getPlayerEditor(player.getUniqueId()).cancelOpenMenu();
             event.setCancelled(true);
@@ -122,6 +142,49 @@ public class PlayerEditorManager implements Listener {
         }
     }
 
+    // Paper users: you can add PrePlayerAttackEntityEvent here for even earlier interception.
+    // We keep Spigot-compat by not importing Paper-only classes.
+
+    // Swing-based fallback: fires for entity left-clicks even when no damage event is raised.
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
+    void onArmSwing(PlayerAnimationEvent e) {
+        // Only care about the main hand swing
+        if (e.getAnimationType() != PlayerAnimationType.ARM_SWING) return;
+        final Player player = e.getPlayer();
+        if (!plugin.isEditTool(player.getInventory().getItemInMainHand())) return;
+        if (!player.hasPermission("asedit.basic")) return;
+        if (plugin.enablePerWorld && (!plugin.allowedWorldList.contains(player.getWorld().getName()))) {
+            getPlayerEditor(player.getUniqueId()).sendMessage("notincorrectworld", "warn");
+            return;
+        }
+
+        // Avoid double-processing if the damage path will also catch this
+        if (debounce(player.getUniqueId())) return;
+
+        // Ray-trace like getTargets() to see what they're hitting
+        ArrayList<ArmorStand> targets = getTargets(player);
+        if (targets != null && !targets.isEmpty()) {
+            ArmorStand target = targets.get(0);
+            if (canEdit(player, target)) {
+                debug.log("Arm swing fallback: applying LEFT tool to ArmorStand for " + player.getDisplayName());
+                getPlayerEditor(player.getUniqueId()).cancelOpenMenu();
+                applyLeftTool(player, target);
+            }
+            return;
+        }
+
+        ArrayList<ItemFrame> frames = getFrameTargets(player);
+        if (frames != null && !frames.isEmpty()) {
+            ItemFrame frame = frames.get(0);
+            if (canEdit(player, frame)) {
+                debug.log("Arm swing fallback: applying LEFT tool to ItemFrame for " + player.getDisplayName());
+                getPlayerEditor(player.getUniqueId()).cancelOpenMenu();
+                applyLeftTool(player, frame);
+            }
+        }
+    }
+
+    // Right-click (direct entity) path (pose reverse / menus / rename)
     @EventHandler(priority = EventPriority.LOWEST)
     void onArmorStandInteract(PlayerInteractAtEntityEvent event) {
         if (ignoreNextInteract) return;
@@ -130,7 +193,7 @@ public class PlayerEditorManager implements Listener {
         if (!((event.getRightClicked() instanceof ArmorStand) || event.getRightClicked() instanceof ItemFrame)) return;
 
         if (event.getRightClicked() instanceof ArmorStand) {
-            debug.log("Player '" + player.getDisplayName() + "' has right clicked on an ArmorStand");
+            debug.log("Player '" + player.getDisplayName() + "' has RIGHT clicked on an ArmorStand");
             ArmorStand as = (ArmorStand) event.getRightClicked();
 
             if (!canEdit(player, as)) return;
@@ -141,19 +204,17 @@ public class PlayerEditorManager implements Listener {
                 return;
             }
 
-
-            //Attempt rename
+            // Attempt rename via Name Tag
             if (player.getInventory().getItemInMainHand().getType() == Material.NAME_TAG && player.hasPermission("asedit.rename")) {
                 ItemStack nameTag = player.getInventory().getItemInMainHand();
                 String name;
-                String name2;
                 if (nameTag.getItemMeta() != null && nameTag.getItemMeta().hasDisplayName()) {
                     name = nameTag.getItemMeta().getDisplayName().replace('&', ChatColor.COLOR_CHAR);
                 } else {
                     name = null;
                 }
 
-                //API: ArmorStandRenameEvent
+                // API: ArmorStandRenameEvent
                 ArmorStandRenameEvent e = new ArmorStandRenameEvent(as, player, name);
                 Bukkit.getPluginManager().callEvent(e);
                 if (e.isCancelled()) return;
@@ -162,15 +223,12 @@ public class PlayerEditorManager implements Listener {
                     as.setCustomName(null);
                     as.setCustomNameVisible(false);
                     event.setCancelled(true);
-                } else if (name.startsWith("" + ChatColor.COLOR_CHAR + "") && !player.hasPermission("asedit.rename.color")) {
+                } else if (name.startsWith("" + ChatColor.COLOR_CHAR) && !player.hasPermission("asedit.rename.color")) {
                     event.setCancelled(true);
                     player.sendMessage(plugin.getLang().getMessage("renamestopped"));
-                } else if (!name.equals("")) { // nametag is not blank
+                } else if (!name.equals("")) { // Name tag is not blank
                     event.setCancelled(true);
-
-
-                    //minecraft will set the name after this event even if the event is cancelled.
-                    //change it 1 tick later to apply formatting without it being overwritten
+                    // Delay 1 tick so vanilla rename doesn't overwrite formatting
                     Scheduler.runTaskLater(plugin, () -> {
                         as.setCustomName(name);
                         as.setCustomNameVisible(true);
@@ -190,9 +248,10 @@ public class PlayerEditorManager implements Listener {
                 return;
             }
 
-            if (player.getInventory().getItemInMainHand().getType().equals(Material.GLOW_INK_SAC) //attempt glowing
-                && player.hasPermission("asedit.basic")
-                && plugin.glowItemFrames && player.isSneaking()) {
+            // Glow item frame conversion (shift + glow ink sac)
+            if (player.getInventory().getItemInMainHand().getType().equals(Material.GLOW_INK_SAC)
+                    && player.hasPermission("asedit.basic")
+                    && plugin.glowItemFrames && player.isSneaking()) {
 
                 ItemFrameGlowEvent e = new ItemFrameGlowEvent(itemFrame, player);
                 Bukkit.getPluginManager().callEvent(e);
@@ -202,8 +261,8 @@ public class PlayerEditorManager implements Listener {
                 ItemStack contents = null;
                 Rotation rotation = null;
                 if (itemFrame.getItem().getType() != Material.AIR) {
-                    contents = itemFrame.getItem(); //save item
-                    rotation = itemFrame.getRotation(); // save item rotation
+                    contents = itemFrame.getItem(); // save item
+                    rotation = itemFrame.getRotation(); // save rotation
                 }
                 Location itemFrameLocation = itemFrame.getLocation();
                 BlockFace facing = itemFrame.getFacing();
@@ -221,47 +280,62 @@ public class PlayerEditorManager implements Listener {
                     glowFrame.setItem(contents);
                     glowFrame.setRotation(rotation);
                 }
-
             }
         }
     }
 
+    // Prevent creative players from breaking invulnerable stands (issue #309) and cleanup names
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     void onArmorStandBreak(EntityDamageByEntityEvent event) { // Fixes issue #309
-        if (!(event.getDamager() instanceof Player)) return; // If the damager is not a player, ignore.
-        if (!(event.getEntity()  instanceof ArmorStand)) return; // If the damaged entity is not an ArmorStand, ignore.
+        if (!(event.getDamager() instanceof Player)) return;
+        if (!(event.getEntity() instanceof ArmorStand)) return;
 
         if (event.getEntity() instanceof ArmorStand entityAS) {
-            // Check if the ArmorStand is invulnerable and if the damager is a player.
             if (entityAS.isInvulnerable() && event.getDamager() instanceof Player p) {
-                // Check if the player is in Creative mode.
                 if (p.getGameMode() == GameMode.CREATIVE) {
-                    // If the player is in Creative mode and the ArmorStand is invulnerable,
-                    // cancel the event to prevent breaking the ArmorStand.
                     p.sendMessage(plugin.getLang().getMessage("unabledestroycreative"));
-                    event.setCancelled(true); // Cancel the event to prevent ArmorStand destruction.
+                    event.setCancelled(true);
                 }
             }
         }
 
         if (event.getEntity() instanceof ArmorStand entityAS && entityAS.isDead()) {
-            //TODO: Find a more permanent fix for "Once you destroy that armor stand, the armor stand will keep it's name and colour given by the name tag." THIS IS A TEMP SOLUTION FOR NOW.
+            // TEMP workaround for name lingering after destruction
             event.getEntity().setCustomName(null);
             event.getEntity().setCustomNameVisible(false);
             event.setCancelled(false);
         }
     }
 
+    // Menu open with the tool: RIGHT clicks only (avoid stealing left-click edits)
+    @EventHandler(priority = EventPriority.LOWEST)
+    void onRightClickTool(PlayerInteractEvent e) {
+        if (!(e.getAction() == Action.RIGHT_CLICK_AIR || e.getAction() == Action.RIGHT_CLICK_BLOCK)) return;
+        debug.log("Ran on Right Click Tool Event.");
+        Player player = e.getPlayer();
+        if (!plugin.isEditTool(player.getInventory().getItemInMainHand())) return;
+        if (plugin.requireSneaking && !player.isSneaking()) return;
+        if (!player.hasPermission("asedit.basic")) return;
+        if (plugin.enablePerWorld && (!plugin.allowedWorldList.contains(player.getWorld().getName()))) {
+            // Implementation for Per World ASE
+            getPlayerEditor(player.getUniqueId()).sendMessage("notincorrectworld", "warn");
+            e.setCancelled(true);
+            return;
+        }
+        e.setCancelled(true);
+        debug.log("Open Menu Called for Player: " + player.getDisplayName());
+        getPlayerEditor(player.getUniqueId()).openMenu();
+    }
+
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = true)
     public void onSwitchHands(PlayerSwapHandItemsEvent event) {
         debug.log("PlayerSwapHandItemsEvent trigger for Player: " + event.getPlayer().getDisplayName());
-        if (!plugin.isEditTool(event.getOffHandItem())) return; //event assumes they are already switched
+        if (!plugin.isEditTool(event.getOffHandItem())) return; // event assumes they are already switched
         event.setCancelled(true);
         Player player = event.getPlayer();
 
-        as = getTargets(player); //Get All ArmorStand closest to player
-        itemF = getFrameTargets(player); //Get ItemFrame Closest to Player
-
+        as = getTargets(player);   // Get ArmorStands closest to player view
+        itemF = getFrameTargets(player); // Get ItemFrames closest to player view
 
         // Check for null and empty lists
         if (as != null && itemF != null && !as.isEmpty() && !itemF.isEmpty()) {
@@ -297,7 +371,6 @@ public class PlayerEditorManager implements Listener {
                         endLaser = true;
                     }
                 }
-
                 if (endLaser) break;
             }
             if (eyeLaser.getBlock().getType().isSolid()) break;
@@ -328,19 +401,16 @@ public class PlayerEditorManager implements Listener {
                         endLaser = true;
                     }
                 }
-
                 if (endLaser) break;
             }
             if (eyeLaser.getBlock().getType().isSolid()) break;
             eyeLaser.add(STEP);
         }
-
         return itemFrames;
     }
 
-
     boolean canEdit(Player player, Entity entity) {
-        //Get the Entity being checked for editing
+        // Get the Entity being checked for editing
         Block block = entity.getLocation().getBlock();
 
         // Check if all protections allow this edit, if one fails, don't allow edit
@@ -371,43 +441,6 @@ public class PlayerEditorManager implements Listener {
         getPlayerEditor(player.getUniqueId()).reverseEditArmorStand(as);
     }
 
-    //Unused?
-    @EventHandler(priority = EventPriority.LOWEST)
-    void onRightClickTool(PlayerInteractEvent e) {
-        if (!(e.getAction() == Action.LEFT_CLICK_AIR
-            || e.getAction() == Action.RIGHT_CLICK_AIR
-            || e.getAction() == Action.LEFT_CLICK_BLOCK
-            || e.getAction() == Action.RIGHT_CLICK_BLOCK)) return;
-        debug.log("Ran on Right Click Tool Event.");
-        Player player = e.getPlayer();
-        if (!plugin.isEditTool(player.getInventory().getItemInMainHand())) return;
-        if (plugin.requireSneaking && !player.isSneaking()) return;
-        if (!player.hasPermission("asedit.basic")) return;
-        if (plugin.enablePerWorld && (!plugin.allowedWorldList.contains(player.getWorld().getName()))) {
-            //Implementation for Per World ASE
-            getPlayerEditor(player.getUniqueId()).sendMessage("notincorrectworld", "warn");
-            e.setCancelled(true);
-            return;
-        }
-        e.setCancelled(true);
-        debug.log("Open Menu Called for Player: " + player.getDisplayName());
-        getPlayerEditor(player.getUniqueId()).openMenu();
-    }
-
-    @EventHandler(priority = EventPriority.NORMAL)
-    void onScrollNCrouch(PlayerItemHeldEvent e) {
-        Player player = e.getPlayer();
-        if (!player.isSneaking()) return;
-        if (!plugin.isEditTool(player.getInventory().getItem(e.getPreviousSlot()))) return;
-
-        e.setCancelled(true);
-        if (e.getNewSlot() == e.getPreviousSlot() + 1 || (e.getNewSlot() == 0 && e.getPreviousSlot() == 8)) {
-            getPlayerEditor(player.getUniqueId()).cycleAxis(1);
-        } else if (e.getNewSlot() == e.getPreviousSlot() - 1 || (e.getNewSlot() == 8 && e.getPreviousSlot() == 0)) {
-            getPlayerEditor(player.getUniqueId()).cycleAxis(-1);
-        }
-    }
-
     @EventHandler(priority = EventPriority.LOWEST)
     void onPlayerMenuSelect(InventoryClickEvent e) {
         final InventoryHolder holder = PaperLib.getHolder(e.getInventory(), false).getHolder();
@@ -420,12 +453,12 @@ public class PlayerEditorManager implements Listener {
             if (item != null && item.hasItemMeta()) {
                 Player player = (Player) e.getWhoClicked();
                 String command = item.getItemMeta().getPersistentDataContainer().get(plugin.getIconKey(), PersistentDataType.STRING);
-                if (command.equals("ase ") || command == null){ // Therefore user has clicked a black pane
-                    getPlayerEditor(player.getUniqueId()).sendMessage("blackGlassClick","");
+                if (command == null || command.equals("ase ")) { // Therefore user has clicked a black pane
+                    getPlayerEditor(player.getUniqueId()).sendMessage("blackGlassClick", "");
                     return;
-                } else if (command != null) {
-                     player.performCommand(command);
-                     return;
+                } else {
+                    player.performCommand(command);
+                    return;
                 }
             }
         }
@@ -461,7 +494,6 @@ public class PlayerEditorManager implements Listener {
         }
     }
 
-
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     void onPlayerMenuClose(InventoryCloseEvent e) {
         final InventoryHolder holder = PaperLib.getHolder(e.getInventory(), false).getHolder();
@@ -473,7 +505,7 @@ public class PlayerEditorManager implements Listener {
             pe.equipMenu.equipArmorstand();
 
             // Remove the In Use Lock
-            if(!Scheduler.isFolia()){
+            if (!Scheduler.isFolia()) {
                 team = plugin.scoreboard.getTeam(plugin.inUseTeam);
                 if (team != null) {
                     team.removeEntry(pe.armorStandInUseId.toString());
@@ -521,9 +553,8 @@ public class PlayerEditorManager implements Listener {
         return counter.ticks;
     }
 
-
     class TickCounter implements Runnable {
-        long ticks = 0; //I am optimistic
+        long ticks = 0; // I am optimistic
 
         @Override
         public void run() {

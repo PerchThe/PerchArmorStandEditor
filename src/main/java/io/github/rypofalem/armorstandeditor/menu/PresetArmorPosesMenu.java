@@ -32,17 +32,18 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.util.EulerAngle;
 
 import java.util.ArrayList;
 
 public class PresetArmorPosesMenu {
 
-    Inventory menuInv;
+    private Inventory menuInv;
     private Debug debug;
     private final PlayerEditor pe;
     public ArmorStandEditorPlugin plugin = ArmorStandEditorPlugin.instance();
-    private ArmorStand armorStand;
+    private final ArmorStand armorStand;
     static String name;
 
     public PresetArmorPosesMenu(PlayerEditor pe, ArmorStand as) {
@@ -50,60 +51,82 @@ public class PresetArmorPosesMenu {
         this.armorStand = as;
         this.debug = new Debug(pe.plugin);
         name = plugin.getLang().getMessage("presettitle", "menutitle");
+        // 4 rows (36): top row (back + filler), two centered rows of presets (rows 3 & 4), no extras
         menuInv = Bukkit.createInventory(pe.getManager().getPresetHolder(), 36, name);
     }
 
-    //PRESET NAMES
-    final String VALUETOREPLACE = "§"+plugin.getLang().getFormat("info");
-    final String SITTING = plugin.getLang().getMessage("sitting").replace(VALUETOREPLACE, "§2§n");
-    final String WAVING = plugin.getLang().getMessage("waving").replace(VALUETOREPLACE, "§2§n");
-    final String GREETING_1 = plugin.getLang().getMessage("greeting 1").replace(VALUETOREPLACE, "§2§n");
-    final String GREETING_2 = plugin.getLang().getMessage("greeting 2").replace(VALUETOREPLACE, "§2§n");
-    final String CHEERS = plugin.getLang().getMessage("cheers").replace(VALUETOREPLACE, "§2§n");
-    final String ARCHER = plugin.getLang().getMessage("archer").replace(VALUETOREPLACE, "§2§n");
-    final String DANCING = plugin.getLang().getMessage("dancing").replace(VALUETOREPLACE, "§2§n");
-    final String HANGING = plugin.getLang().getMessage("hanging").replace(VALUETOREPLACE, "§2§n");
-    final String PRESENTING = plugin.getLang().getMessage("present").replace(VALUETOREPLACE, "§2§n");
-    final String FISHING = plugin.getLang().getMessage("fishing").replace(VALUETOREPLACE, "§2§n");
+    // ----- Normalized gold titles (no underline), used for both icons and comparisons -----
+    private String normalizedTitleForPath(String path) {
+        String raw = plugin.getLang().getMessage(path, "iconname");
+        if (raw == null || raw.isBlank()) raw = defaultTitleForPath(path);
+        return toGold(noUnderline(noColors(raw)));
+    }
 
-    //Menu Stuff
-    final String BACKTOMENU = plugin.getLang().getMessage("backtomenu").replace(VALUETOREPLACE, "§2§n");
-    final String HOWTO = plugin.getLang().getMessage("howtopreset").replace(VALUETOREPLACE, "§2§n");
+    // Preset names (match display names exactly)
+    private final String SITTING     = normalizedTitleForPath("sitting");
+    private final String WAVING      = normalizedTitleForPath("waving");
+    private final String GREETING_1  = normalizedTitleForPath("greeting 1");
+    private final String GREETING_2  = normalizedTitleForPath("greeting 2");
+    private final String CHEERS      = normalizedTitleForPath("cheers");
+    private final String ARCHER      = normalizedTitleForPath("archer");
+    private final String DANCING     = normalizedTitleForPath("dancing");
+    private final String HANGING     = normalizedTitleForPath("hanging");
+    private final String PRESENTING  = normalizedTitleForPath("present");
+    private final String FISHING     = normalizedTitleForPath("fishing");
+
+    // Menu utility
+    private final String BACKTOMENU  = normalizedTitleForPath("backtomenu");
 
     private void fillInventory() {
         menuInv.clear();
 
-        /*
-          Menu Set up in a similar way as to how we do it for
-          the actual armorStand menu
-         */
+        // Filler: gray stained glass pane (blank)
+        ItemStack filler = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
+        ItemMeta fm = filler.getItemMeta();
+        if (fm != null) {
+            fm.setDisplayName(" ");
+            fm.setLore(new ArrayList<>());
+            filler.setItemMeta(fm);
+        }
 
-        //Blank Slots
-        ItemStack blank = createIcon(new ItemStack(Material.BLACK_STAINED_GLASS_PANE, 1), "blankslot");
+        // Accurate/thematic icons for each preset
+        ItemStack sitting   = createIcon(new ItemStack(Material.OAK_STAIRS),        "sitting");     // seat vibe
+        ItemStack waving    = createIcon(new ItemStack(Material.LIME_BANNER),       "waving");      // waving banner
+        ItemStack greet1    = createIcon(new ItemStack(Material.BELL),              "greeting 1");  // greeting bell
+        ItemStack greet2    = createIcon(new ItemStack(Material.SUNFLOWER),         "greeting 2");  // friendly flower
+        ItemStack cheer     = createIcon(new ItemStack(Material.HONEY_BOTTLE),      "cheers");      // drink (no potion meta)
+        ItemStack archer    = createIcon(new ItemStack(Material.BOW),               "archer");      // bow
+        ItemStack dancing   = createIcon(new ItemStack(Material.JUKEBOX),           "dancing");     // music/dance
+        ItemStack hanging   = createIcon(new ItemStack(Material.CHAIN),             "hanging");     // chain
+        ItemStack present   = createIcon(new ItemStack(Material.LECTERN),           "present");     // presenting/lectern
+        ItemStack fishing   = createIcon(new ItemStack(Material.FISHING_ROD),       "fishing");     // fishing rod
 
-        //Presets -- Here to test things out, will get better names soon TM
-        ItemStack sitting = createIcon(new ItemStack(Material.ARMOR_STAND, 1), "sitting");
-        ItemStack waving = createIcon(new ItemStack(Material.ARMOR_STAND, 2), "waving");
-        ItemStack greet1 = createIcon(new ItemStack(Material.ARMOR_STAND, 3), "greeting 1");
-        ItemStack greet2 = createIcon(new ItemStack(Material.ARMOR_STAND, 4), "greeting 2");
-        ItemStack cheer = createIcon(new ItemStack(Material.ARMOR_STAND, 5), "cheers");
-        ItemStack archer = createIcon(new ItemStack(Material.ARMOR_STAND, 6), "archer");
-        ItemStack dancing = createIcon(new ItemStack(Material.ARMOR_STAND, 7), "dancing");
-        ItemStack hanging = createIcon(new ItemStack(Material.ARMOR_STAND, 8), "hanging");
-        ItemStack present = createIcon(new ItemStack(Material.ARMOR_STAND, 9), "present");
-        ItemStack fishing = createIcon(new ItemStack(Material.ARMOR_STAND, 10), "fishing");
+        // Back button at absolute top-left, as a red stained glass pane
+        ItemStack backToMenu = createIcon(new ItemStack(Material.RED_STAINED_GLASS_PANE), "backtomenu");
 
-        //Utilities
-        ItemStack backToMenu = createIcon(new ItemStack(Material.RED_WOOL, 1), "backtomenu");
-        ItemStack howToPreset = createIcon(new ItemStack(Material.BOOK, 1), "howtopreset");
+        // Fill all slots with filler first
+        ItemStack[] items = new ItemStack[36];
+        for (int i = 0; i < items.length; i++) items[i] = filler;
 
-        //Build for the Menu ---- DO NOT MODIFY THIS UNLESS YOU KNOW WHAT YOU ARE DOING!
-        ItemStack[] items = {
-            blank, blank, blank, blank, blank, blank, blank, blank, blank,
-            blank, backToMenu, sitting, waving, greet1, greet2, cheer, archer, blank,
-            blank, howToPreset, dancing, hanging, present, fishing, blank, blank, blank,
-            blank, blank, blank, blank, blank, blank, blank, blank, blank
-        };
+        // Top row (0..8): place Back at 0; rest remains filler
+        items[0] = backToMenu;
+
+        // Presets moved down one row vs. the old 2-row layout:
+        // Now on rows 3 & 4 (still centered): slots 20..24 and 29..33
+
+        // Row 3 (slots 18..26) -> use 20..24 for centering
+        items[20] = sitting;
+        items[21] = waving;
+        items[22] = greet1;
+        items[23] = greet2;
+        items[24] = cheer;
+
+        // Row 4 (slots 27..35) -> use 29..33 for centering
+        items[29] = archer;
+        items[30] = dancing;
+        items[31] = hanging;
+        items[32] = present;
+        items[33] = fishing;
 
         menuInv.setContents(items);
     }
@@ -111,21 +134,61 @@ public class PresetArmorPosesMenu {
     private ItemStack createIcon(ItemStack icon, String path) {
         ItemMeta meta = icon.getItemMeta();
         assert meta != null;
-        meta.setDisplayName(getIconName(path));
+
+        // Command tag (optional, useful for future click routing)
+        meta.getPersistentDataContainer().set(
+                ArmorStandEditorPlugin.instance().getIconKey(),
+                PersistentDataType.STRING,
+                "ase preset " + path
+        );
+
+        // Title & lore with forced colors: &6 title, &f lore; strip underline/colors from lang
+        String rawName = plugin.getLang().getMessage(path, "iconname");
+        if (rawName == null || rawName.isBlank()) rawName = defaultTitleForPath(path);
+        String nameCol = toGold(noUnderline(noColors(rawName)));
+
+        String rawDesc = plugin.getLang().getMessage(path + ".description", "icondescription");
+        if (rawDesc == null) rawDesc = "";
+        String descCol = toWhite(noUnderline(stripLeadingColorCodes(rawDesc)));
+
+        meta.setDisplayName(nameCol);
         ArrayList<String> loreList = new ArrayList<>();
-        loreList.add(getIconDescription(path));
+        if (!descCol.isBlank()) loreList.add(descCol);
         meta.setLore(loreList);
+
         meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
         icon.setItemMeta(meta);
         return icon;
     }
 
-    private String getIconName(String path) {
-        return plugin.getLang().getMessage(path, "iconname");
+    private String defaultTitleForPath(String path) {
+        if ("greeting 1".equals(path)) return "Greeting 1";
+        if ("greeting 2".equals(path)) return "Greeting 2";
+        return switch (path) {
+            case "sitting"     -> "Sitting";
+            case "waving"      -> "Waving";
+            case "cheers"      -> "Cheers";
+            case "archer"      -> "Archer";
+            case "dancing"     -> "Dancing";
+            case "hanging"     -> "Hanging";
+            case "present"     -> "Presenting";
+            case "fishing"     -> "Fishing";
+            case "backtomenu"  -> "Back";
+            default            -> capitalizeWords(path);
+        };
     }
 
-    private String getIconDescription(String path) {
-        return plugin.getLang().getMessage(path + ".description", "icondescription");
+    private String capitalizeWords(String s) {
+        if (s == null || s.isBlank()) return "";
+        String[] parts = s.trim().split("\\s+");
+        StringBuilder sb = new StringBuilder();
+        for (String p : parts) {
+            if (p.isEmpty()) continue;
+            sb.append(Character.toUpperCase(p.charAt(0)));
+            if (p.length() > 1) sb.append(p.substring(1).toLowerCase());
+            sb.append(' ');
+        }
+        return sb.toString().trim();
     }
 
     public void openMenu() {
@@ -141,75 +204,55 @@ public class PresetArmorPosesMenu {
     }
 
     public void handlePresetPose(String itemName, Player player) {
-        if (itemName == null) return;
-        if (player == null) return;
+        if (itemName == null || player == null) return;
 
-        debug.log("Player '" + player.getDisplayName() + "' has chosen the Preset AS Pose '" + itemName + "'");
-        //Do the Preset
+        debug.log("Player '" + player.getDisplayName() + "' chose preset pose '" + itemName + "'");
+
         if (itemName.equals(SITTING)) {
             setPresetPose(player, 345, 0, 10, 350, 0, 350, 280, 20, 0, 280, 340, 0, 0, 0, 0, 0, 0, 0);
-            player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
-            player.closeInventory();
         } else if (itemName.equals(WAVING)) {
             setPresetPose(player, 220, 20, 0, 350, 0, 350, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-            player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
-            player.closeInventory();
         } else if (itemName.equals(GREETING_1)) {
             setPresetPose(player, 260, 20, 0, 260, 340, 0, 340, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 0);
-            player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
-            player.closeInventory();
         } else if (itemName.equals(GREETING_2)) {
             setPresetPose(player, 260, 10, 0, 260, 350, 0, 320, 0, 0, 10, 0, 0, 340, 0, 350, 0, 0, 0);
-            player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
-            player.closeInventory();
         } else if (itemName.equals(ARCHER)) {
             setPresetPose(player, 270, 350, 0, 280, 50, 0, 340, 0, 10, 20, 0, 350, 0, 0, 0, 0, 0, 0);
-            player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
-            player.closeInventory();
         } else if (itemName.equals(DANCING)) {
             setPresetPose(player, 14, 0, 110, 20, 0, 250, 250, 330, 0, 15, 330, 0, 350, 350, 0, 0, 0, 0);
-            player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
-            player.closeInventory();
         } else if (itemName.equals(CHEERS)) {
             setPresetPose(player, 250, 60, 0, 20, 10, 0, 10, 0, 0, 350, 0, 0, 340, 0, 0, 0, 0, 0);
-            player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
-            player.closeInventory();
         } else if (itemName.equals(HANGING)) {
             setPresetPose(player, 1, 33, 67, -145, -33, -4, -42, 21, 1, -100, 0, -1, -29, -38, -18, 0, -4, 0);
-            player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
-            player.closeInventory();
         } else if (itemName.equals(PRESENTING)) {
             setPresetPose(player, 280, 330, 0, 10, 0, 350, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-            player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
-            player.closeInventory();
         } else if (itemName.equals(FISHING)) {
             setPresetPose(player, 300, 320, 0, 300, 40, 0, 280, 20, 0, 280, 340, 0, 0, 0, 0, 0, 0, 0);
-            player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
-            player.closeInventory();
         } else if (itemName.equals(BACKTOMENU)) {
             player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
             player.closeInventory();
             pe.openMenu();
-        } else if (itemName.equals(HOWTO)) {
-            player.sendMessage(pe.plugin.getLang().getMessage("howtopresetmsg"));
-            player.sendMessage(pe.plugin.getLang().getMessage("helpurl"));
-            player.sendMessage(pe.plugin.getLang().getMessage("helpdiscord"));
-            player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
-            player.closeInventory();
+            return;
+        } else {
+            return;
         }
+
+        // play click & close for pose actions
+        player.playSound(player.getLocation(), Sound.BLOCK_COMPARATOR_CLICK, 1, 1);
+        player.closeInventory();
     }
 
-    public void setPresetPose(Player player, double rightArmRoll, double rightArmYaw, double rightArmPitch,
-        double leftArmRoll, double leftArmYaw, double leftArmPitch,
-        double rightLegRoll, double rightLegYaw, double rightLegPitch,
-        double leftLegRoll, double LeftLegYaw, double llp_yaw,
-        double headRoll, double headYaw, double headPitch,
-        double bodyRoll, double bodyYaw, double bodyPitch) {
+    public void setPresetPose(Player player,
+                              double rightArmRoll, double rightArmYaw, double rightArmPitch,
+                              double leftArmRoll,  double leftArmYaw,  double leftArmPitch,
+                              double rightLegRoll, double rightLegYaw, double rightLegPitch,
+                              double leftLegRoll,  double leftLegYaw,  double leftLegPitch,
+                              double headRoll,     double headYaw,     double headPitch,
+                              double bodyRoll,     double bodyYaw,     double bodyPitch) {
 
         if (!armorStand.isValid()) return;
         if (!player.hasPermission("asedit.basic")) return;
 
-        //Do the right positions based on what is given
         armorStand.setRightArmPose(new EulerAngle(
                 Math.toRadians(rightArmRoll),
                 Math.toRadians(rightArmYaw),
@@ -229,8 +272,8 @@ public class PresetArmorPosesMenu {
 
         armorStand.setLeftLegPose(new EulerAngle(
                 Math.toRadians(leftLegRoll),
-                Math.toRadians(LeftLegYaw),
-                Math.toRadians(llp_yaw)));
+                Math.toRadians(leftLegYaw),
+                Math.toRadians(leftLegPitch)));
 
         armorStand.setBodyPose(new EulerAngle(
                 Math.toRadians(bodyRoll),
@@ -241,10 +284,13 @@ public class PresetArmorPosesMenu {
                 Math.toRadians(headRoll),
                 Math.toRadians(headYaw),
                 Math.toRadians(headPitch)));
-
-        
-
-
     }
 
+    // ----- color helpers (single set) -----
+    private String color(String s) { return s == null ? "" : s.replace('&', '§'); }
+    private String toGold(String s) { return color("&6" + s); }
+    private String toWhite(String s) { return color("&f" + s); }
+    private String noUnderline(String s) { return s == null ? "" : s.replaceAll("(?i)[§&]n", ""); }
+    private String noColors(String s) { return s == null ? "" : s.replaceAll("(?i)[§&][0-9A-FK-ORX]", ""); }
+    private String stripLeadingColorCodes(String s) { return s == null ? "" : s.replaceFirst("(?i)^[§&][0-9A-FK-ORX]", ""); }
 }

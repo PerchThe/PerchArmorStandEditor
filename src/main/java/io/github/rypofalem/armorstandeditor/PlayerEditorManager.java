@@ -21,10 +21,12 @@ package io.github.rypofalem.armorstandeditor;
 
 import com.google.common.collect.ImmutableList;
 
-import io.github.rypofalem.armorstandeditor.Debug;
 import io.github.rypofalem.armorstandeditor.api.ArmorStandRenameEvent;
 import io.github.rypofalem.armorstandeditor.api.ItemFrameGlowEvent;
 import io.github.rypofalem.armorstandeditor.menu.ASEHolder;
+import io.github.rypofalem.armorstandeditor.menu.PresetArmorPosesMenu;
+import io.github.rypofalem.armorstandeditor.menu.SizeMenu;
+import io.github.rypofalem.armorstandeditor.modes.EditMode;
 import io.github.rypofalem.armorstandeditor.protections.*;
 
 import io.papermc.lib.PaperLib;
@@ -55,10 +57,16 @@ public class PlayerEditorManager implements Listener {
     private Debug debug;
     private ArmorStandEditorPlugin plugin;
     private HashMap<UUID, PlayerEditor> players;
-    private ASEHolder menuHolder = new ASEHolder(); // Inventory holder that owns the main ase menu inventories for the plugin
-    private ASEHolder equipmentHolder = new ASEHolder(); // Inventory holder that owns the equipment menu
-    private ASEHolder presetHolder = new ASEHolder(); // Inventory Holder that owns the PresetArmorStand Post Menu
-    private ASEHolder sizeMenuHolder = new ASEHolder(); // Inventory Holder that owns the PresetArmorStand Post Menu
+
+    // Track menu inventories
+    private ASEHolder menuHolder = new ASEHolder();      // Main ASE Menu
+    private ASEHolder equipmentHolder = new ASEHolder(); // Equipment Menu
+    private ASEHolder presetHolder = new ASEHolder();    // Preset Menu
+    private ASEHolder sizeMenuHolder = new ASEHolder();  // Size Menu
+
+    // Local edit-mode tracking (since PlayerEditor has no getMode()/setMode())
+    private final HashMap<UUID, EditMode> modeByPlayer = new HashMap<>();
+
     double coarseAdj;
     double fineAdj;
     double coarseMov;
@@ -74,7 +82,6 @@ public class PlayerEditorManager implements Listener {
     private final HashMap<UUID, Long> lastEditTick = new HashMap<>();
 
     // Instantiate protections used to determine whether a player may edit an armor stand or item frame
-    // NOTE: GriefPreventionProtection is Deprecated as of v1.19.3-40
     private final List<Protection> protections = ImmutableList.of(
             new GriefDefenderProtection(),
             new GriefPreventionProtection(),
@@ -142,9 +149,6 @@ public class PlayerEditorManager implements Listener {
         }
     }
 
-    // Paper users: you can add PrePlayerAttackEntityEvent here for even earlier interception.
-    // We keep Spigot-compat by not importing Paper-only classes.
-
     // Swing-based fallback: fires for entity left-clicks even when no damage event is raised.
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     void onArmSwing(PlayerAnimationEvent e) {
@@ -200,7 +204,7 @@ public class PlayerEditorManager implements Listener {
             if (plugin.isEditTool(player.getInventory().getItemInMainHand())) {
                 getPlayerEditor(player.getUniqueId()).cancelOpenMenu();
                 event.setCancelled(true);
-                applyRightTool(player, as);
+                applyRightTool(player, as); // opens Size/Preset menu based on current mode
                 return;
             }
 
@@ -437,8 +441,25 @@ public class PlayerEditorManager implements Listener {
 
     void applyRightTool(Player player, ArmorStand as) {
         debug.log("Applying Right Tool on ArmorStand for Player: " + player.getDisplayName());
-        getPlayerEditor(player.getUniqueId()).cancelOpenMenu();
-        getPlayerEditor(player.getUniqueId()).reverseEditArmorStand(as);
+        PlayerEditor pe = getPlayerEditor(player.getUniqueId());
+        pe.cancelOpenMenu();
+
+        EditMode mode = getMode(player.getUniqueId());
+        if (mode == EditMode.SIZE) {
+            // Ensure click handling has a live menu instance
+            pe.sizeModificationMenu = new SizeMenu(pe, as);
+            pe.sizeModificationMenu.openMenu();
+            setMode(player.getUniqueId(), EditMode.NONE); // FIX: make SIZE a one-shot
+            return;
+        } else if (mode == EditMode.PRESET) {
+            pe.presetPoseMenu = new PresetArmorPosesMenu(pe, as);
+            pe.presetPoseMenu.openMenu();
+            setMode(player.getUniqueId(), EditMode.NONE); // FIX: make PRESET a one-shot
+            return;
+        }
+
+        // Default behavior (reverse pose edit etc.)
+        pe.reverseEditArmorStand(as);
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -447,6 +468,7 @@ public class PlayerEditorManager implements Listener {
 
         if (holder == null) return;
         if (!(holder instanceof ASEHolder)) return;
+
         if (holder == menuHolder) {
             e.setCancelled(true);
             ItemStack item = e.getCurrentItem();
@@ -456,12 +478,30 @@ public class PlayerEditorManager implements Listener {
                 if (command == null || command.equals("ase ")) { // Therefore user has clicked a black pane
                     getPlayerEditor(player.getUniqueId()).sendMessage("blackGlassClick", "");
                     return;
-                } else {
-                    player.performCommand(command);
+                }
+
+                // Intercept mode selections to set our local mode (NOT execute /ase)
+                String lower = command.trim().toLowerCase();
+
+                if (lower.equals("ase mode size")) {
+                    setMode(player.getUniqueId(), EditMode.SIZE);
                     return;
                 }
+
+                if (lower.equals("ase mode preset")) {
+                    setMode(player.getUniqueId(), EditMode.PRESET);
+                    return;
+                }
+
+                // FIX: Selecting any other command should leave special modes
+                setMode(player.getUniqueId(), EditMode.NONE);
+
+                // Fallback to existing command behavior for everything else
+                player.performCommand(command);
+                return;
             }
         }
+
         if (holder == equipmentHolder) {
             ItemStack item = e.getCurrentItem();
             if (item == null) return;
@@ -500,13 +540,19 @@ public class PlayerEditorManager implements Listener {
 
         if (holder == null) return;
         if (!(holder instanceof ASEHolder)) return;
+
+        // FIX: Leaving size/preset menus should always reset per-player mode
+        if (holder == sizeMenuHolder || holder == presetHolder) {
+            clearMode(e.getPlayer().getUniqueId());
+        }
+
         if (holder == equipmentHolder) {
             PlayerEditor pe = players.get(e.getPlayer().getUniqueId());
             pe.equipMenu.equipArmorstand();
 
             // Remove the In Use Lock
             if (!Scheduler.isFolia()) {
-                team = plugin.scoreboard.getTeam(plugin.inUseTeam);
+                Team team = plugin.scoreboard.getTeam(plugin.inUseTeam);
                 if (team != null) {
                     team.removeEntry(pe.armorStandInUseId.toString());
                 }
@@ -516,7 +562,9 @@ public class PlayerEditorManager implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     void onPlayerLogOut(PlayerQuitEvent e) {
+        // Clear per-player state on logout
         removePlayerEditor(e.getPlayer().getUniqueId());
+        clearMode(e.getPlayer().getUniqueId());
     }
 
     public PlayerEditor getPlayerEditor(UUID uuid) {
@@ -564,5 +612,21 @@ public class PlayerEditorManager implements Listener {
         public long getTime() {
             return ticks;
         }
+    }
+
+    // ---- local mode helpers ----
+    private EditMode getMode(UUID id) {
+        EditMode m = modeByPlayer.get(id);
+        return (m == null ? EditMode.NONE : m);
+    }
+    private void setMode(UUID id, EditMode mode) {
+        if (mode == null || mode == EditMode.NONE) {
+            modeByPlayer.remove(id);
+        } else {
+            modeByPlayer.put(id, mode);
+        }
+    }
+    private void clearMode(UUID id) {
+        modeByPlayer.remove(id);
     }
 }

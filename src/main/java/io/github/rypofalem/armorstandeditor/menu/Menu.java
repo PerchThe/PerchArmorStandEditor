@@ -22,7 +22,6 @@ package io.github.rypofalem.armorstandeditor.menu;
 import io.github.rypofalem.armorstandeditor.ArmorStandEditorPlugin;
 import io.github.rypofalem.armorstandeditor.Debug;
 import io.github.rypofalem.armorstandeditor.PlayerEditor;
-
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.inventory.Inventory;
@@ -31,7 +30,6 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.PotionMeta;
 import org.bukkit.persistence.PersistentDataType;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 
@@ -63,35 +61,35 @@ public class Menu {
 
         // -------- Main icons --------
         // Axis (normal stained glass blocks)
-        ItemStack xAxis = createIcon(new ItemStack(Material.RED_STAINED_GLASS),   "xaxis", "axis x");
+        ItemStack xAxis = createIcon(new ItemStack(Material.RED_STAINED_GLASS), "xaxis", "axis x");
         ItemStack yAxis = createIcon(new ItemStack(Material.GREEN_STAINED_GLASS), "yaxis", "axis y");
-        ItemStack zAxis = createIcon(new ItemStack(Material.BLUE_STAINED_GLASS),  "zaxis", "axis z");
+        ItemStack zAxis = createIcon(new ItemStack(Material.BLUE_STAINED_GLASS), "zaxis", "axis z");
 
         // Movement speed
-        ItemStack coarseAdj = createIcon(new ItemStack(Material.COARSE_DIRT),      "coarseadj", "adj coarse");
-        ItemStack fineAdj   = createIcon(new ItemStack(Material.SMOOTH_SANDSTONE), "fineadj",   "adj fine");
+        ItemStack coarseAdj = createIcon(new ItemStack(Material.COARSE_DIRT), "coarseadj", "adj coarse");
+        ItemStack fineAdj = createIcon(new ItemStack(Material.SMOOTH_SANDSTONE), "fineadj", "adj fine");
 
         // Reset pose (lava bucket)
         ItemStack reset = createIcon(new ItemStack(Material.LAVA_BUCKET), "reset", "mode reset");
 
         // Body parts / modes
-        ItemStack headPos     = createIcon(new ItemStack(Material.IRON_HELMET),     "head",     "mode head");
-        ItemStack bodyPos     = createIcon(new ItemStack(Material.IRON_CHESTPLATE), "body",     "mode body");
-        ItemStack leftLegPos  = createIcon(new ItemStack(Material.IRON_LEGGINGS),   "leftleg",  "mode leftleg");
-        ItemStack rightLegPos = createIcon(new ItemStack(Material.IRON_LEGGINGS),   "rightleg", "mode rightleg");
-        ItemStack leftArmPos  = createIcon(new ItemStack(Material.STICK),           "leftarm",  "mode leftarm");
-        ItemStack rightArmPos = createIcon(new ItemStack(Material.STICK),           "rightarm", "mode rightarm");
-        ItemStack showArms    = createIcon(new ItemStack(Material.STICK),           "showarms", "mode showarms");
+        ItemStack headPos = createIcon(new ItemStack(Material.IRON_HELMET), "head", "mode head");
+        ItemStack bodyPos = createIcon(new ItemStack(Material.IRON_CHESTPLATE), "body", "mode body");
+        ItemStack leftLegPos = createIcon(new ItemStack(Material.IRON_LEGGINGS), "leftleg", "mode leftleg");
+        ItemStack rightLegPos = createIcon(new ItemStack(Material.IRON_LEGGINGS), "rightleg", "mode rightleg");
+        ItemStack leftArmPos = createIcon(new ItemStack(Material.STICK), "leftarm", "mode leftarm");
+        ItemStack rightArmPos = createIcon(new ItemStack(Material.STICK), "rightarm", "mode rightarm");
+        ItemStack showArms = createIcon(new ItemStack(Material.STICK), "showarms", "mode showarms");
 
-        ItemStack presetItem  = createIcon(new ItemStack(Material.BOOKSHELF), "presetmenu", "mode preset");
+        ItemStack presetItem = createIcon(new ItemStack(Material.BOOKSHELF), "presetmenu", "mode preset");
 
-        // Visibility: make a plain potion (no base type, no custom effects) so no effect text shows
+        // Visibility: make a plain potion (no base type, no custom effects)
         ItemStack visibility = null;
         if (pe.getPlayer().hasPermission("asedit.togglearmorstandvisibility") || pe.plugin.getArmorStandVisibility()) {
             ItemStack vis = new ItemStack(Material.POTION);
             PotionMeta pm = (PotionMeta) vis.getItemMeta();
             if (pm != null) {
-                pm.clearCustomEffects();             // ensure there's no “No Effect” or effect lines
+                pm.clearCustomEffects();
                 vis.setItemMeta(pm);
             }
             visibility = createIcon(vis, "invisible", "mode invisible");
@@ -102,10 +100,21 @@ public class Menu {
             toggleVulnerability = createIcon(new ItemStack(Material.TOTEM_OF_UNDYING), "vulnerability", "mode vulnerability");
         }
 
+        // --- FIXED SIZE ICON ---
         ItemStack size = null;
-        if (pe.getPlayer().hasPermission("asedit.togglesize")) {
-            size = createIcon(new ItemStack(Material.PUFFERFISH), "size", "mode size");
+        boolean canSizeEdit = pe.getPlayer().hasPermission("asedit.size")
+                || pe.getPlayer().hasPermission("asedit.sizeeditor")
+                || pe.getPlayer().hasPermission("asedit.togglesize");
+        if (canSizeEdit) {
+            size = createIconWithTitle(
+                    new ItemStack(Material.PUFFERFISH),
+                    "size",
+                    "mode size",
+                    "&6Size",
+                    "&fOpen the size editor"
+            );
         }
+        // --- END FIX ---
 
         ItemStack disableSlots = null;
         if (pe.getPlayer().hasPermission("asedit.disableslots")) {
@@ -132,15 +141,15 @@ public class Menu {
             equipment = createIcon(new ItemStack(Material.CHEST), "equipment", "mode equipment");
         }
 
-        // Copy / Paste / Slots (3)
+        // Copy / Paste / Slots
         ItemStack copy, paste, slot1, slot2, slot3;
         if (pe.getPlayer().hasPermission("asedit.copy")) {
-            copy  = createIcon(new ItemStack(Material.BUCKET),       "copy",    "mode copy");
-            slot1 = createIcon(new ItemStack(Material.BOOK),         "copyslot","slot 1", "1");
-            slot2 = createIcon(new ItemStack(Material.BOOK, 2),      "copyslot","slot 2", "2");
-            slot3 = createIcon(new ItemStack(Material.BOOK, 3),      "copyslot","slot 3", "3");
+            copy = createIcon(new ItemStack(Material.BUCKET), "copy", "mode copy");
+            slot1 = createIcon(new ItemStack(Material.BOOK), "copyslot", "slot 1", "1");
+            slot2 = createIcon(new ItemStack(Material.BOOK, 2), "copyslot", "slot 2", "2");
+            slot3 = createIcon(new ItemStack(Material.BOOK, 3), "copyslot", "slot 3", "3");
         } else {
-            copy = slot1 = slot2 = slot3 = filler; // keep column visually filled
+            copy = slot1 = slot2 = slot3 = filler;
         }
         if (pe.getPlayer().hasPermission("asedit.paste")) {
             paste = createIcon(new ItemStack(Material.WATER_BUCKET), "paste", "mode paste");
@@ -152,43 +161,43 @@ public class Menu {
                 ? createIcon(new ItemStack(Material.GLOW_INK_SAC), "armorstandglow", "mode armorstandglow")
                 : filler;
 
-        // -------- Build layout with filler everywhere first --------
+        // -------- Build layout --------
         ItemStack[] items = new ItemStack[54];
         Arrays.fill(items, filler);
 
-        // Left column: Copy → Paste → Slot1 → Slot2 → Slot3 → Preset
-        items[0]  = copy;
-        items[9]  = paste;
+        // Left column
+        items[0] = copy;
+        items[9] = paste;
         items[18] = slot1;
         items[27] = slot2;
         items[36] = slot3;
         items[45] = presetItem;
 
-        // Top row: axis centered; placement far right
+        // Top row
         items[3] = xAxis;
         items[4] = yAxis;
         items[5] = zAxis;
         items[8] = place;
 
-        // Row 2: head; rotate to the far right (under placement)
+        // Row 2
         items[13] = headPos;
         items[17] = rotate;
 
-        // Row 3: arms/body; coarse to the far right (under rotate)
+        // Row 3
         items[21] = rightArmPos;
         items[22] = bodyPos;
         items[23] = leftArmPos;
         items[26] = coarseAdj;
 
-        // Row 4: legs; fine to the far right (under coarse)
+        // Row 4
         items[30] = rightLegPos;
         items[32] = leftLegPos;
         items[35] = fineAdj;
 
-        // Row 5: disable slots at the far right (under fine)
+        // Row 5
         items[44] = disableSlots;
 
-        // Bottom row (46..53): glow, visibility, size, equipment (center), show arms, baseplate, invulnerability, reset
+        // Bottom row
         items[46] = glowing;
         items[47] = (visibility != null ? visibility : filler);
         items[48] = (size != null ? size : filler);
@@ -196,11 +205,12 @@ public class Menu {
         items[50] = showArms;
         items[51] = (plate != null ? plate : filler);
         items[52] = (toggleVulnerability != null ? toggleVulnerability : filler);
-        items[53] = reset; // bottom-right danger
+        items[53] = reset;
 
         menuInv.setContents(items);
     }
 
+    // ----------------- ICON HELPERS -----------------
     private ItemStack createIcon(ItemStack icon, String path, String command) {
         return createIcon(icon, path, command, null);
     }
@@ -209,14 +219,12 @@ public class Menu {
         ItemMeta meta = icon.getItemMeta();
         assert meta != null;
 
-        // Attach command for click handling
         meta.getPersistentDataContainer().set(
                 ArmorStandEditorPlugin.instance().getIconKey(),
                 PersistentDataType.STRING,
                 "ase " + command
         );
 
-        // Title & lore: force &6 title, pure white lore; strip underline/legacy color codes from lang
         String rawName = getIconName(path, option);
         String rawDesc = getIconDescription(path, option);
 
@@ -224,6 +232,31 @@ public class Menu {
         ArrayList<String> lore = new ArrayList<>();
         String desc = stripUnderline(rawDesc);
         lore.add(color("&f" + stripLeadingColor(desc)));
+        meta.setLore(lore);
+
+        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
+        icon.setItemMeta(meta);
+        return icon;
+    }
+
+    // --- NEW helper: explicit title/lore override ---
+    private ItemStack createIconWithTitle(ItemStack icon, String path, String command, String title, String description) {
+        ItemMeta meta = icon.getItemMeta();
+        assert meta != null;
+
+        meta.getPersistentDataContainer().set(
+                ArmorStandEditorPlugin.instance().getIconKey(),
+                PersistentDataType.STRING,
+                "ase " + command
+        );
+
+        if (title == null || title.isBlank()) title = "&6Size";
+        meta.setDisplayName(color(title));
+
+        ArrayList<String> lore = new ArrayList<>();
+        if (description != null && !description.isBlank()) {
+            lore.add(color(description));
+        }
         meta.setLore(lore);
 
         meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
@@ -239,7 +272,7 @@ public class Menu {
         return pe.plugin.getLang().getMessage(path + ".description", "icondescription", option);
     }
 
-    // ----- color helpers -----
+    // ----------------- COLOR HELPERS -----------------
     private String color(String s) {
         return s == null ? "" : s.replace('&', '§');
     }
